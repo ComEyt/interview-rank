@@ -2,7 +2,10 @@ package rank
 
 import (
 	"context"
+	"fmt"
 	"github.com/go-redis/redis/v8"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -43,14 +46,32 @@ const (
 // 一个是将这两个参数结合到一起，组成真正存储在zset中的score
 func (r *RedisClient) decodeScore(zsetScore float64) (int64, int64) {
 	// 将zset中的score进行对应的解析，解析为getScoreTime 和 userScore
-	userScore := USERSCORE
-	getScoreTime := GETSCORETIME
+	// 因为确定了最高6位的score 和 时间戳 一共合在一起的长度是16位，那么就以此长度为基本条件
+	// 按照前6位进行拆分是score，如果score不够，则在前面补充上0，然后进行拆分。
+
+	// 现将zsetScore转换为string 类型
+	str := strings.Split(fmt.Sprintf("%f", zsetScore), ".")[0]
+	fmt.Println(len(str))
+	if len(str) != 16 {
+		zeroCount := 16 - len(str)
+		fmt.Println(zeroCount)
+		str = strings.Repeat("0", zeroCount) + str
+	}
+	// 拼接完之后，分别获取前面的score 和 后面的时间戳
+	userScore, _ := strconv.ParseInt(str[0:6], 10, 64)
+	getScoreTime, _ := strconv.ParseInt(str[6:], 10, 64)
+	
 	return userScore, getScoreTime
 }
 
 func (r *RedisClient) encodeScore(userScore, getScoreTime int64) int64 {
 	// 通过一些操作将userScore 和 getScoreTime进行结合，转换为真正存储在zset中的score
-	return ZSETSCORE
+	// 我选择将分数添加到前6位，不足6位的分数使用0来进行区分
+	uScore := fmt.Sprintf("%06d", userScore)
+	// getScoreTime 是当前的unix时间戳，将两个进行拼接之后转换为int类型
+	time := strconv.Itoa(int(getScoreTime))
+	result, _ := strconv.ParseInt(uScore+time, 10, 64)
+	return result
 }
 
 // 向redis中添加得分
